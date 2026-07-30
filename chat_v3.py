@@ -1,25 +1,13 @@
-# ============================================================
-# IMPORTS
-# ============================================================
-
 import streamlit as st
 from typing import TypedDict, Annotated
-
 from dotenv import load_dotenv
-
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-
-
-# ============================================================
-# ENVIRONMENT
-# ============================================================
 
 load_dotenv()
 
@@ -45,78 +33,39 @@ def load_resources():
     # --------------------------------------------------------
     # Embedding model
     # --------------------------------------------------------
-
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
     # --------------------------------------------------------
     # PDF -> Chunks -> FAISS -> Retriever
     # --------------------------------------------------------
 
     def build_retriever(pdf_path: str):
-
         loader = PyPDFLoader(pdf_path)
-
         documents = loader.load()
 
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=800,
-            chunk_overlap=100
-        )
+            chunk_overlap=100)
 
-        chunks = splitter.split_documents(
-            documents
-        )
-
-        vectorstore = FAISS.from_documents(
-            chunks,
-            embeddings
-        )
-
-        retriever = vectorstore.as_retriever(
-            search_kwargs={
-                "k": 4
-            }
-        )
+        chunks = splitter.split_documents(documents)
+        vectorstore = FAISS.from_documents(chunks, embeddings)
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
         return retriever
+    
 
+    academic_retriever = build_retriever( "academics_handbook.pdf")
 
-    # --------------------------------------------------------
-    # Academic knowledge base
-    # --------------------------------------------------------
-
-    academic_retriever = build_retriever(
-        "academics_handbook.pdf"
-    )
-
-
-    # --------------------------------------------------------
-    # Fee knowledge base
-    # --------------------------------------------------------
-
-    fee_retriever = build_retriever(
-        "fee_structure.pdf"
-    )
+    fee_retriever = build_retriever("fee_structure.pdf")
 
 
     # --------------------------------------------------------
     # LLM
     # --------------------------------------------------------
 
-    llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        temperature=0.3
-    )
+    llm = ChatGroq(model="llama-3.3-70b-versatile",temperature=0.3)
 
-
-    return (
-        academic_retriever,
-        fee_retriever,
-        llm
-    )
+    return (academic_retriever, fee_retriever, llm)
 
 
 academic_retriever, fee_retriever, llm = load_resources()
@@ -127,16 +76,9 @@ academic_retriever, fee_retriever, llm = load_resources()
 # ============================================================
 
 class State(TypedDict):
-
     programme: str
-
-    messages: Annotated[
-        list,
-        add_messages
-    ]
-
+    messages: Annotated[list,add_messages]
     query_type: str
-
     retrieved_context: str
 
 
@@ -145,10 +87,7 @@ class State(TypedDict):
 # ============================================================
 
 def classifier_node(state: State) -> dict:
-
-    last_message = (
-        state["messages"][-1].content
-    )
+    last_message = (state["messages"][-1].content)
 
 
     prompt = f"""
@@ -217,36 +156,22 @@ general
 """
 
 
-    response = llm.invoke(
-        prompt
-    )
+    response = llm.invoke(prompt)
 
 
-    category = (
-        response.content
-        .strip()
-        .lower()
-    )
+    category = ( response.content.strip().lower())
 
 
     if "academic" in category:
-
         category = "academic"
 
-
     elif "fee" in category:
-
         category = "fee"
 
-
     else:
-
         category = "general"
 
-
-    return {
-        "query_type": category
-    }
+    return { "query_type": category}
 
 
 # ============================================================
@@ -254,59 +179,34 @@ general
 # ============================================================
 
 def academic_rag_node(state: State) -> dict:
+    query = ( state["messages"][-1].content)
 
-    query = (
-        state["messages"][-1].content
-    )
-
-
-    docs = academic_retriever.invoke(
-        query
-    )
-
+    docs = academic_retriever.invoke(query)
 
     context_parts = []
 
-
     for doc in docs:
-
-        page = doc.metadata.get(
-            "page"
-        )
-
+        page = doc.metadata.get("page")
 
         if page is not None:
-
-            source = (
-                f"Academic Handbook - Page {page + 1}"
-            )
+            source = (f"Academic Handbook - Page {page + 1}")
 
         else:
-
-            source = (
-                "Academic Handbook"
-            )
-
+            source = ("Academic Handbook")
 
         context_parts.append(
-            f"""
-SOURCE:
-{source}
+                    f"""
+        SOURCE:
+        {source}
+        
+        CONTENT:
+        {doc.page_content}
+        """
+                )
 
-CONTENT:
-{doc.page_content}
-"""
-        )
+    context = "\n\n".join(context_parts)
 
-
-    context = "\n\n".join(
-        context_parts
-    )
-
-
-    return {
-        "retrieved_context": context
-    }
+    return {"retrieved_context": context}
 
 
 # ============================================================
@@ -314,38 +214,19 @@ CONTENT:
 # ============================================================
 
 def fee_rag_node(state: State) -> dict:
+    query = (state["messages"][-1].content)
 
-    query = (
-        state["messages"][-1].content
-    )
-
-
-    docs = fee_retriever.invoke(
-        query
-    )
-
-
+    docs = fee_retriever.invoke( query)
     context_parts = []
 
-
     for doc in docs:
-
-        page = doc.metadata.get(
-            "page"
-        )
-
+        page = doc.metadata.get("page")
 
         if page is not None:
-
-            source = (
-                f"Fee Structure - Page {page + 1}"
-            )
+            source = (f"Fee Structure - Page {page + 1}")
 
         else:
-
-            source = (
-                "Fee Structure"
-            )
+            source = ("Fee Structure")
 
 
         context_parts.append(
@@ -522,43 +403,24 @@ Example:
 Source: Academic Handbook - Page 12
 """
 
+    response = llm.invoke(prompt)
 
-    response = llm.invoke(
-        prompt
-    )
-
-
-    return {
-        "messages": [
-            (
-                "ai",
-                response.content.strip()
-            )
-        ]
-    }
-
+    return {"messages": [( "ai",response.content.strip())]}
 
 # ============================================================
 # ROUTER
 # ============================================================
 
 def route_query(state: State):
-
-    query_type = state.get(
-        "query_type",
-        "general"
-    )
+    query_type = state.get("query_type","general")
 
 
     if query_type == "academic":
-
         return "academic_rag"
 
 
     elif query_type == "fee":
-
         return "fee_rag"
-
 
     return "general"
 
@@ -569,97 +431,41 @@ def route_query(state: State):
 
 @st.cache_resource(show_spinner=False)
 def build_graph():
-
-    graph = StateGraph(
-        State
-    )
-
-
-    # --------------------------------------------------------
+    graph = StateGraph(State)
+    
     # Nodes
-    # --------------------------------------------------------
-
-    graph.add_node(
-        "classifier",
-        classifier_node
-    )
-
-
-    graph.add_node(
-        "academic_rag",
-        academic_rag_node
-    )
-
-
-    graph.add_node(
-        "fee_rag",
-        fee_rag_node
-    )
-
-
-    graph.add_node(
-        "general",
-        general_node
-    )
-
-
-    graph.add_node(
-        "response",
-        response_node
-    )
-
+  
+    graph.add_node("classifier",classifier_node)
+    graph.add_node( "academic_rag",academic_rag_node)
+    graph.add_node( "fee_rag",fee_rag_node)
+    graph.add_node("general",general_node)
+    graph.add_node("response",response_node)
 
     # --------------------------------------------------------
     # START -> CLASSIFIER
     # --------------------------------------------------------
 
-    graph.add_edge(
-        START,
-        "classifier"
-    )
-
+    graph.add_edge(START, "classifier")
 
     # --------------------------------------------------------
     # CONDITIONAL ROUTING
     # --------------------------------------------------------
 
-    graph.add_conditional_edges(
-        "classifier",
-        route_query
-    )
-
+    graph.add_conditional_edges("classifier",route_query)
 
     # --------------------------------------------------------
     # RAG -> RESPONSE
     # --------------------------------------------------------
 
-    graph.add_edge(
-        "academic_rag",
-        "response"
-    )
-
-
-    graph.add_edge(
-        "fee_rag",
-        "response"
-    )
-
-
-    graph.add_edge(
-        "general",
-        "response"
-    )
-
+    graph.add_edge("academic_rag","response")
+    graph.add_edge("fee_rag","response")
+    graph.add_edge("general","response")
 
     # --------------------------------------------------------
     # RESPONSE -> END
     # --------------------------------------------------------
 
-    graph.add_edge(
-        "response",
-        END
-    )
-
+    graph.add_edge("response",END)
 
     return graph.compile()
 
@@ -676,12 +482,10 @@ app = build_graph()
 # ============================================================
 
 if "messages" not in st.session_state:
-
     st.session_state.messages = []
 
 
 if "lc_messages" not in st.session_state:
-
     st.session_state.lc_messages = []
 
 
@@ -691,7 +495,6 @@ if "lc_messages" not in st.session_state:
 
 st.markdown("""
 <style>
-
 
 /* ==========================================================
    GLOBAL
@@ -1423,8 +1226,6 @@ footer {
 # ============================================================
 
 with st.sidebar:
-
-
     # --------------------------------------------------------
     # Brand
     # --------------------------------------------------------
@@ -1435,9 +1236,7 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-
     st.markdown("---")
-
 
     # --------------------------------------------------------
     # Programme
@@ -1476,9 +1275,7 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-
     st.markdown("---")
-
 
     # --------------------------------------------------------
     # Knowledge Sources
@@ -1488,7 +1285,6 @@ with st.sidebar:
         '<div class="section-label">Knowledge Sources</div>',
         unsafe_allow_html=True
     )
-
 
     st.markdown(
         '<div class="source-card">Academic Handbook</div>',
@@ -1521,15 +1317,11 @@ with st.sidebar:
     ):
 
         st.session_state.messages = []
-
         st.session_state.lc_messages = []
-
         st.rerun()
 
 
-    st.caption(
-        "LangGraph / RAG / Groq"
-    )
+    st.caption("LangGraph / RAG / Groq")
 
 
 # ============================================================
@@ -1551,11 +1343,8 @@ st.markdown(
 # ============================================================
 
 academic_button = False
-
 fee_button = False
-
 grading_button = False
-
 exam_button = False
 
 
@@ -1631,27 +1420,17 @@ appropriate knowledge source.
 # ============================================================
 
 for msg in st.session_state.messages:
-
-
     with st.chat_message(
         msg["role"]
     ):
-
-
         # ----------------------------------------------------
         # Routing badge
         # ----------------------------------------------------
-
         if (
             msg["role"] == "assistant"
             and msg.get("query_type")
         ):
-
-
-            query_type = msg[
-                "query_type"
-            ]
-
+            query_type = msg["query_type"]
 
             st.markdown(
                 f'<span class="query-badge badge-{query_type}">'
@@ -1659,26 +1438,17 @@ for msg in st.session_state.messages:
                 f'</span>',
                 unsafe_allow_html=True
             )
-
-
         # ----------------------------------------------------
         # Message
         # ----------------------------------------------------
-
-        st.markdown(
-            msg["content"]
-        )
+        st.markdown(msg["content"])
 
 
 # ============================================================
 # CHAT INPUT
 # ============================================================
 
-typed_query = st.chat_input(
-    f"Ask a question as a {student_programme} student..."
-)
-
-
+typed_query = st.chat_input(f"Ask a question as a {student_programme} student...")
 # ============================================================
 # DETERMINE QUERY
 # ============================================================
@@ -1687,35 +1457,22 @@ user_query = None
 
 
 if academic_button:
-
-    user_query = (
-        "What is the minimum attendance requirement?"
-    )
+    user_query = ("What is the minimum attendance requirement?")
 
 
 elif fee_button:
-
-    user_query = (
-        f"What is the fee structure for {student_programme}?"
-    )
+    user_query = (f"What is the fee structure for {student_programme}?")
 
 
 elif grading_button:
-
-    user_query = (
-        "Explain the grading system."
-    )
+    user_query = ("Explain the grading system.")
 
 
 elif exam_button:
-
-    user_query = (
-        "What are the examination rules?"
-    )
+    user_query = ("What are the examination rules?")
 
 
 elif typed_query:
-
     user_query = typed_query
 
 
@@ -1724,12 +1481,9 @@ elif typed_query:
 # ============================================================
 
 if user_query:
-
-
     # --------------------------------------------------------
     # Save user message
     # --------------------------------------------------------
-
     st.session_state.messages.append(
         {
             "role":
@@ -1849,18 +1603,14 @@ if user_query:
         # Display response
         # ----------------------------------------------------
 
-        st.markdown(
-            ai_response
-        )
+        st.markdown(ai_response)
 
 
     # ========================================================
     # UPDATE HISTORY
     # ========================================================
 
-    st.session_state.lc_messages = (
-        result["messages"]
-    )
+    st.session_state.lc_messages = (result["messages"])
 
 
     st.session_state.messages.append(
