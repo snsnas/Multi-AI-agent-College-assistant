@@ -11,33 +11,15 @@ from langchain_community.vectorstores import FAISS
 
 load_dotenv()
 
-
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
 st.set_page_config(
     page_title="College Assistant",
     layout="centered",
     initial_sidebar_state="expanded",
 )
-
-
-# ============================================================
-# LOAD RESOURCES
-# ============================================================
-
 @st.cache_resource(show_spinner="Loading college knowledge base...")
 def load_resources():
 
-    # --------------------------------------------------------
-    # Embedding model
-    # --------------------------------------------------------
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-    # --------------------------------------------------------
-    # PDF -> Chunks -> FAISS -> Retriever
-    # --------------------------------------------------------
 
     def build_retriever(pdf_path: str):
         loader = PyPDFLoader(pdf_path)
@@ -53,21 +35,15 @@ def load_resources():
 
         return retriever
     
-
     academic_retriever = build_retriever( "academics_handbook.pdf")
 
     fee_retriever = build_retriever("fee_structure.pdf")
 
 
-    # --------------------------------------------------------
-    # LLM
-    # --------------------------------------------------------
 
     llm = ChatGroq(model="llama-3.3-70b-versatile",temperature=0.3)
-
     return (academic_retriever, fee_retriever, llm)
-
-
+    
 academic_retriever, fee_retriever, llm = load_resources()
 
 
